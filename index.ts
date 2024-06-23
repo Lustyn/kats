@@ -1,4 +1,4 @@
-import { connect, DiscardPolicy, JSONCodec, type StreamConfig } from "nats";
+import { connect, JSONCodec } from "nats";
 import { KristApi, type KristTransaction } from "krist";
 
 const host = process.env.NATS_HOST || "127.0.0.1";
@@ -15,9 +15,6 @@ await jsm.streams.update("krist", {
   subjects: [
     kristTransactionSubject("*", "*"),
   ],
-  max_msgs: -1,
-  max_age: 0,
-  discard: DiscardPolicy.Old,
 });
 
 console.log("Stream created");
