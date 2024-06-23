@@ -1,0 +1,7 @@
+services:
+  kats:
+    build: .
+  nats:
+    image: nats:latest
+    ports:
+      - "127.0.0.1:4222:4222"
