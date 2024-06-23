@@ -11,11 +11,21 @@ const jsm = await nats.jetstreamManager();
 
 const kristTransactionSubject = (from: string, to: string) => `krist.from.${from}.to.${to}`;
 
-await jsm.streams.update("krist", {
-  subjects: [
-    kristTransactionSubject("*", "*"),
-  ],
-});
+// Create the stream if it doesn't exist
+try {
+  await jsm.streams.update("krist", {
+    subjects: [
+      kristTransactionSubject("*", "*"),
+    ],
+  });
+} catch (e) {
+  await jsm.streams.add({
+    name: "krist",
+    subjects: [
+      kristTransactionSubject("*", "*"),
+    ],
+  });
+}
 
 console.log("Stream created");
 
