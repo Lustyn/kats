@@ -152,13 +152,22 @@ async function exit(code?: number) {
 
 async function main() {
   await runCatchup();
-  setInterval(() => {
-    runLatest().catch(async (e) => {
-      console.error("Error in latest", e);
-      await exit(1);
-    });
-  }, 1000);
+
+  function go() {
+    runLatest()
+      .catch(async (e) => {
+        console.error("Error in latest", e);
+      })
+      .finally(() => {
+        setTimeout(go, 1000);
+      });
+  }
+
+  go();
 }
 
 main()
-  .catch(console.error);
+  .catch(e => {
+    console.error(e);
+    return exit(1);
+  });
