@@ -3,13 +3,16 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "build": "tsc",
     "start": "bun run index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.5.2"
+  },
+  "dependencies": {
+    "krist": "^3.0.2",
+    "nats": "^2.27.0"
   }
 }

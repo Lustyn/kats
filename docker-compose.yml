@@ -1,7 +1,14 @@
 services:
   kats:
     build: .
+    environment:
+      - NATS_HOST=nats
   nats:
     image: nats:latest
     ports:
       - "127.0.0.1:4222:4222"
+    volumes:
+      - ./nats-server.conf:/nats-server.conf
+      - jetstream-data:/data/jetstream
+volumes:
+  jetstream-data:
