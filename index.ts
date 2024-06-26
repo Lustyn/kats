@@ -14,8 +14,10 @@ const logger = winston.createLogger({
 });
 
 const host = process.env.NATS_HOST || "127.0.0.1";
+const user = process.env.NATS_USER || "krist";
+const pass = process.env.NATS_PASS || "krist";
 
-const nats = await connect({ servers: host, user: "krist", pass: "krist" });
+const nats = await connect({ servers: host, user, pass });
 
 logger.info("Connected to NATS");
 
