@@ -1,40 +1,44 @@
 import { connect, JSONCodec } from "nats";
 import { KristApi, type KristTransaction } from "krist";
+import { createOrUpdateStream } from "./nats";
+import PQueue from "p-queue";
+import winston from "winston";
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.simple(),
+  ),
+  transports: [new winston.transports.Console()],
+});
 
 const host = process.env.NATS_HOST || "127.0.0.1";
 
 const nats = await connect({ servers: host, user: "krist", pass: "krist" });
 
-console.log("Connected to NATS");
+logger.info("Connected to NATS");
 
 const jsm = await nats.jetstreamManager();
 
 const kristTransactionSubject = (from: string, to: string) => `krist.from.${from}.to.${to}`;
 
 // Create the stream if it doesn't exist
-try {
-  await jsm.streams.update("krist", {
-    subjects: [
-      kristTransactionSubject("*", "*"),
-    ],
-  });
-} catch (e) {
-  await jsm.streams.add({
-    name: "krist",
-    subjects: [
-      kristTransactionSubject("*", "*"),
-    ],
-  });
-}
+await createOrUpdateStream(jsm, {
+  name: "krist",
+  subjects: [
+    kristTransactionSubject("*", "*"),
+  ],
+});
 
-console.log("Stream created");
+logger.info("Stream created");
 
 const js = nats.jetstream();
 const json = JSONCodec();
 
 const kv = await js.views.kv("kats");
 
-console.log("KV view created");
+logger.info("KV view created");
 
 const krist = new KristApi();
 
@@ -44,7 +48,7 @@ async function publishKristTransaction(transaction: KristTransaction) {
   if (from === null || from === "") return;
   if (to === "name" || to === "a") return;
 
-  console.log(`Processing transaction ${id} from ${from} to ${to}`);
+  logger.info(`Processing transaction ${id} from ${from} to ${to}`);
 
   await js.publish(kristTransactionSubject(from, to), json.encode(transaction), { msgID: id.toString() });
 }
@@ -68,7 +72,7 @@ async function runCatchup() {
   const catchup = await getCatchupState();
 
   if (catchup.done) {
-    console.log("Already caught up");
+    logger.info("Already caught up");
     return;
   }
 
@@ -76,11 +80,11 @@ async function runCatchup() {
   while (true) {
     const { count, total, transactions } = await krist.getTransactions({ limit: 1000, offset });
   
-    console.log(`Got ${count} transactions, ${total} total`);
+    logger.info(`Got ${count} transactions, ${total} total`);
   
     if (count === 0) {
       await putCatchupState({ done: true, offset });
-      console.log("Caught up");
+      logger.info("Caught up");
       break;
     }
   
@@ -127,7 +131,7 @@ async function runLatest() {
 
     for (const transaction of transactions) {
       if (transaction.id <= latest.lastSeen) break last;
-      console.log(`Found new transaction ${transaction.id}`);
+      logger.info(`Found new transaction ${transaction.id}`);
       newTransactions.push(transaction);
     }
     offset += count;
@@ -140,7 +144,7 @@ async function runLatest() {
   }
 
   if (transactions.length > 0) {
-    console.log(`Processed latest transactions, ${transactions.length} new transactions`);
+    logger.info(`Processed latest transactions, ${transactions.length} new transactions`);
     await putLatestState({ lastSeen: transactions[transactions.length - 1].id });
   }
 }
@@ -150,20 +154,49 @@ async function exit(code?: number) {
   process.exit(code);
 }
 
+const latestQueue = new PQueue({ concurrency: 1 });
+async function tryQueueLatest() {
+  if (latestQueue.size > 1) return;
+
+  try {
+    await latestQueue.add(runLatest)
+  } catch (e) {
+    console.error("Error in latest", e);
+  }
+}
+
 async function main() {
   await runCatchup();
 
-  function go() {
-    runLatest()
-      .catch(async (e) => {
-        console.error("Error in latest", e);
-      })
+  (function go() {
+    tryQueueLatest()
       .finally(() => {
         setTimeout(go, 1000);
       });
-  }
+  })();
 
-  go();
+  const ws = krist.createWsClient({
+    initialSubscriptions: ["transactions"],
+  });
+
+  ws.on("transaction", async transaction => {
+    logger.info("New transaction received:", transaction.transaction.id);
+    await tryQueueLatest();
+  });
+
+  ws.on("wsClose", () => {
+    logger.info("Krist websocket closed");
+  });
+
+  ws.on("wsError", e => {
+    logger.error("Krist websocket error", e);
+  });
+
+  ws.on("wsOpen", () => {
+    logger.info("Connected to Krist");
+  });
+
+  await ws.connect();
 }
 
 main()
