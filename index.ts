@@ -149,11 +149,6 @@ async function runLatest() {
   }
 }
 
-async function exit(code?: number) {
-  await nats.close();
-  process.exit(code);
-}
-
 const latestQueue = new PQueue({ concurrency: 1 });
 async function tryQueueLatest() {
   if (latestQueue.size > 1) return;
@@ -165,13 +160,15 @@ async function tryQueueLatest() {
   }
 }
 
+
 async function main() {
   await runCatchup();
 
+  let timer: Timer;
   (function go() {
     tryQueueLatest()
       .finally(() => {
-        setTimeout(go, 1000);
+        timer = setTimeout(go, 1000);
       });
   })();
 
@@ -197,10 +194,24 @@ async function main() {
   });
 
   await ws.connect();
+
+  async function exit() {
+    ws.forceClose();
+    await nats.drain();
+    clearTimeout(timer);
+  }
+
+  process.on("SIGINT", () => {
+    exit();
+  });
+
+  process.on("SIGTERM", () => {
+    exit();
+  });
 }
 
 main()
   .catch(e => {
     console.error(e);
-    return exit(1);
+    process.exit(1);
   });
